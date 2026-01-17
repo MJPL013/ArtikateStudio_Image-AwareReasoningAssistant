@@ -33,44 +33,135 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# PYDANTIC SCHEMA FOR VERDICT VALIDATION
+# PYDANTIC SCHEMA FOR COMPREHENSIVE VERDICT VALIDATION
 # =============================================================================
 
-class VerdictSchema(BaseModel):
-    """Strict schema for LLM verdict response."""
+class ClassificationSchema(BaseModel):
+    """Image classification result."""
+    image_type: str = Field(default="unknown")
+    quality_tier: str = Field(default="unknown")
+    intended_use: str = Field(default="unknown")
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    reasoning: str = Field(default="")
+
+class SuitabilityScore(BaseModel):
+    """Suitability assessment for a use case."""
+    suitable: bool = Field(default=False)
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
+    reasoning: str = Field(default="")
+
+class TrustEvaluation(BaseModel):
+    """Trust and professionalism assessment."""
+    trust_score: float = Field(default=0.5, ge=0.0, le=1.0)
+    trustworthiness: str = Field(default="medium")
+    trust_factors: List[str] = Field(default_factory=list)
+    distrust_factors: List[str] = Field(default_factory=list)
+    reasoning: str = Field(default="")
+
+class RiskItem(BaseModel):
+    """Individual risk detected."""
+    risk: str = Field(default="")
+    severity: str = Field(default="low")
+    mitigation: str = Field(default="")
+
+class QualityIssue(BaseModel):
+    """Individual quality issue."""
+    issue: str = Field(default="")
+    severity: str = Field(default="minor")
+    impact: str = Field(default="")
+    fixable: bool = Field(default=True)
+    fix_method: str = Field(default="")
+
+class Recommendations(BaseModel):
+    """Actionable recommendations."""
+    critical_actions: List[str] = Field(default_factory=list)
+    improvements: List[str] = Field(default_factory=list)
+    verdict: str = Field(default="ready_to_use")
+    verdict_reasoning: str = Field(default="")
+
+class Scores(BaseModel):
+    """Quality scores."""
+    overall_quality: float = Field(default=5.0, ge=0.0, le=10.0)
+    technical_quality: float = Field(default=5.0, ge=0.0, le=10.0)
+    composition: float = Field(default=5.0, ge=0.0, le=10.0)
+    commercial_viability: float = Field(default=5.0, ge=0.0, le=10.0)
+
+class ComprehensiveVerdictSchema(BaseModel):
+    """Comprehensive schema for LLM verdict response."""
     
-    verdict: str = Field(..., description="APPROVED or REJECTED")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score 0-1")
-    primary_reason: str = Field(..., description="Main reason for decision")
-    warnings: List[str] = Field(default_factory=list, description="Warning messages")
-    bonuses: List[str] = Field(default_factory=list, description="Positive indicators")
-    quality_score: int = Field(..., ge=0, le=100, description="Overall quality score")
-    recommendation: str = Field(default="", description="Improvement suggestion")
-    
-    @validator('verdict')
-    def validate_verdict(cls, v):
-        if v.upper() not in ['APPROVED', 'REJECTED']:
-            raise ValueError('Verdict must be APPROVED or REJECTED')
-        return v.upper()
+    classification: ClassificationSchema = Field(default_factory=ClassificationSchema)
+    type_specific_evaluation: Dict[str, Any] = Field(default_factory=dict)
+    suitability_assessment: Dict[str, SuitabilityScore] = Field(default_factory=dict)
+    trust_evaluation: TrustEvaluation = Field(default_factory=TrustEvaluation)
+    risks_detected: List[RiskItem] = Field(default_factory=list)
+    quality_issues: List[QualityIssue] = Field(default_factory=list)
+    recommendations: Recommendations = Field(default_factory=Recommendations)
+    scores: Scores = Field(default_factory=Scores)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     
     class Config:
-        extra = 'ignore'  # Ignore extra fields from LLM
+        extra = 'ignore'
 
 
 @dataclass
 class VerdictResult:
-    """Final verdict result with metadata."""
+    """Final verdict result with comprehensive metadata."""
+    # Core verdict
     verdict: str
     confidence: float
     primary_reason: str
-    warnings: List[str]
-    bonuses: List[str]
     quality_score: int
-    recommendation: str
+    
+    # Classification
+    image_type: str = "unknown"
+    quality_tier: str = "unknown"
+    
+    # Suitability
+    ecommerce_suitable: bool = False
+    social_media_suitable: bool = False
+    professional_suitable: bool = False
+    
+    # Trust
+    trust_score: float = 0.5
+    trust_factors: List[str] = None
+    distrust_factors: List[str] = None
+    
+    # Issues and recommendations
+    warnings: List[str] = None
+    bonuses: List[str] = None
+    risks: List[Dict] = None
+    quality_issues: List[Dict] = None
+    critical_actions: List[str] = None
+    improvements: List[str] = None
+    recommendation: str = ""
+    
+    # Scores
+    technical_score: float = 5.0
+    composition_score: float = 5.0
+    commercial_score: float = 5.0
     
     # Metadata
     retry_count: int = 0
     raw_response: Optional[str] = None
+    
+    def __post_init__(self):
+        # Initialize mutable defaults
+        if self.warnings is None:
+            self.warnings = []
+        if self.bonuses is None:
+            self.bonuses = []
+        if self.trust_factors is None:
+            self.trust_factors = []
+        if self.distrust_factors is None:
+            self.distrust_factors = []
+        if self.risks is None:
+            self.risks = []
+        if self.quality_issues is None:
+            self.quality_issues = []
+        if self.critical_actions is None:
+            self.critical_actions = []
+        if self.improvements is None:
+            self.improvements = []
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -113,112 +204,281 @@ class LLMInterface:
             raise ValueError(f"Unknown LLM provider: {self.provider}")
     
     def _mock_response(self, user_prompt: str) -> str:
-        """Generate a mock LLM response based on feature data."""
-        # Extract features from prompt for mock logic
+        """Generate a comprehensive mock LLM response based on feature data."""
+        # Extract features from prompt
+        features = {}
         try:
-            # Find the JSON in the prompt
+            # Parse features from the user prompt format
             import re
-            json_match = re.search(r'```json\s*(.*?)\s*```', user_prompt, re.DOTALL)
-            if json_match:
-                features = json.loads(json_match.group(1))
-            else:
-                features = {}
+            for line in user_prompt.split('\n'):
+                if 'Objects detected:' in line:
+                    features['objects_detected'] = eval(line.split(':')[1].strip()) if '[' in line else []
+                elif 'People present:' in line:
+                    features['has_people'] = 'True' in line
+                elif 'Primary subject area:' in line:
+                    match = re.search(r'([\d.]+)%', line)
+                    features['primary_object_area_percent'] = float(match.group(1)) if match else 0
+                elif 'Scene type:' in line:
+                    features['clip_scene_type'] = line.split(':')[1].strip()
+                elif 'Photography style:' in line:
+                    features['clip_style'] = line.split(':')[1].strip()
+                elif 'Background complexity:' in line:
+                    features['background_complexity'] = line.split(':')[1].strip()
+                elif 'Sharpness:' in line:
+                    match = re.search(r'([\d.]+)/100', line)
+                    features['sharpness_score'] = float(match.group(1)) if match else 50
+                    if 'Sharp' in line:
+                        features['sharpness_category'] = 'Sharp'
+                    elif 'Soft' in line:
+                        features['sharpness_category'] = 'Soft'
+                    elif 'Blurry' in line:
+                        features['sharpness_category'] = 'Blurry'
+                elif 'Exposure:' in line:
+                    features['exposure_category'] = line.split(':')[1].strip()
+                elif 'Text detected:' in line:
+                    features['text_detected'] = 'True' in line
+                elif 'Fashion/Model context:' in line:
+                    features['is_fashion_context'] = 'True' in line
+                elif 'Product text' in line:
+                    features['is_product_text'] = 'True' in line
         except:
-            features = {}
+            pass
         
-        # Context-aware rulebook logic
-        verdict = "APPROVED"
+        # ===== STEP 1: CLASSIFICATION =====
+        is_fashion = features.get('is_fashion_context', False)
+        has_people = features.get('has_people', False)
+        clip_scene = features.get('clip_scene_type', 'unknown')
+        clip_style = features.get('clip_style', 'unknown')
+        
+        # Determine image type
+        if is_fashion or (has_people and clip_scene in ['studio_product', 'lifestyle']):
+            image_type = "lifestyle_model"
+        elif clip_scene == 'studio_product':
+            image_type = "studio_product_shot"
+        elif features.get('background_complexity') == 'complex':
+            image_type = "cluttered_scene"
+        elif clip_style == 'amateur':
+            image_type = "amateur_ugc"
+        else:
+            image_type = "studio_product_shot"
+        
+        # Determine quality tier
+        sharpness = features.get('sharpness_score', 50)
+        if clip_style == 'professional' and sharpness > 70:
+            quality_tier = "professional"
+        elif sharpness > 50:
+            quality_tier = "semi_professional"
+        else:
+            quality_tier = "amateur"
+        
+        # ===== STEP 2: EVALUATE BASED ON TYPE =====
         warnings = []
         bonuses = []
-        primary_reason = "Image meets quality standards"
-        quality_score = 75
-        context_detected = "product_only"
+        risks = []
+        quality_issues = []
+        critical_actions = []
+        improvements = []
+        trust_factors = []
+        distrust_factors = []
         
-        # Extract context signals
-        is_fashion = features.get("is_fashion_context", False)
-        is_product_text = features.get("is_product_text", False)
-        has_people = features.get("has_people", False)
+        overall_score = 7.0
+        technical_score = 7.0
+        composition_score = 7.0
+        commercial_score = 7.0
         
-        if is_fashion:
-            context_detected = "fashion_model"
-        elif has_people:
-            context_detected = "lifestyle"
-        
-        # Check rejection criteria with context awareness
-        if features.get("sharpness_category") == "Blurry":
-            verdict = "REJECTED"
-            primary_reason = "Subject is not sharp enough"
-            quality_score = 25
-        elif has_people and not is_fashion:
-            # Only reject people if NOT a fashion context
-            verdict = "REJECTED"
-            primary_reason = "People detected in non-fashion product image"
-            quality_score = 30
-        elif features.get("primary_object_area_percent", 100) < 10:
-            verdict = "REJECTED"
-            primary_reason = "Product occupies too little of the frame"
-            quality_score = 20
-        elif features.get("text_detected") and not is_product_text:
-            # Only reject text if it's NOT product text (watermark)
-            verdict = "REJECTED"
-            primary_reason = "Watermark or overlay text detected"
-            quality_score = 35
+        # Technical quality checks
+        sharpness_cat = features.get('sharpness_category', 'Soft')
+        if sharpness_cat == 'Blurry':
+            quality_issues.append({
+                "issue": "Severe blur detected",
+                "severity": "critical",
+                "impact": "Unusable for professional purposes",
+                "fixable": False,
+                "fix_method": "Recapture with proper focus"
+            })
+            critical_actions.append("Recapture image - blur too severe")
+            distrust_factors.append("Poor technical quality")
+            technical_score = 2.0
+            overall_score = 3.0
+        elif sharpness_cat == 'Soft':
+            quality_issues.append({
+                "issue": "Soft focus detected",
+                "severity": "major",
+                "impact": "Reduces perceived professionalism",
+                "fixable": True,
+                "fix_method": "Apply sharpening in post-processing"
+            })
+            improvements.append("Apply light sharpening")
+            technical_score = 5.5
         else:
-            # Check for bonuses
-            if is_fashion and features.get("clip_style") == "professional":
-                bonuses.append("👗 Professional model/apparel photography")
-                quality_score = 92
-            
-            if features.get("clip_scene_type") == "studio_product":
-                if features.get("clip_style") == "professional":
-                    bonuses.append("Professional studio photography")
-                    quality_score = max(quality_score, 90)
-            
-            if features.get("background_complexity") == "minimal":
-                bonuses.append("Clean, distraction-free background")
-                quality_score = min(quality_score + 5, 100)
-            
-            if is_product_text:
-                bonuses.append("Product branding/design text detected (allowed)")
-            
-            # Check for warnings
-            if features.get("sharpness_category") == "Soft":
-                warnings.append("Image could be sharper")
-                quality_score = max(quality_score - 10, 0)
-            
-            if features.get("exposure_category") not in ["Well-Exposed", None]:
-                warnings.append(f"Exposure issue: {features.get('exposure_category', 'unknown')}")
-                quality_score = max(quality_score - 5, 0)
-            
-            if features.get("background_complexity") == "complex":
-                warnings.append("Background may distract from product")
-            
-            if features.get("clip_style") == "amateur":
-                warnings.append("Image appears non-professional")
-                quality_score = max(quality_score - 15, 0)
+            trust_factors.append("Sharp, clear focus")
+            technical_score = 8.5
         
-        # Build recommendation
-        if verdict == "APPROVED" and warnings:
-            recommendation = "Consider addressing the warnings for higher quality"
-        elif verdict == "REJECTED":
-            recommendation = "Please retake the image addressing the rejection reason"
+        # Exposure check
+        exposure = features.get('exposure_category', 'Well-Exposed')
+        if exposure == 'Under-Exposed':
+            quality_issues.append({
+                "issue": "Image is too dark",
+                "severity": "major",
+                "impact": "Product details may not be visible",
+                "fixable": True,
+                "fix_method": "Increase brightness/exposure"
+            })
+            improvements.append("Brighten the image")
+            technical_score -= 1.5
+        elif exposure == 'Over-Exposed':
+            quality_issues.append({
+                "issue": "Image is too bright",
+                "severity": "major",
+                "impact": "Loss of detail in highlights",
+                "fixable": True,
+                "fix_method": "Reduce exposure/brightness"
+            })
+            improvements.append("Reduce brightness")
+            technical_score -= 1.5
+        else:
+            trust_factors.append("Well-balanced exposure")
+        
+        # People/fashion context
+        if has_people and not is_fashion:
+            risks.append({
+                "risk": "Unintended people in product shot",
+                "severity": "high",
+                "mitigation": "Crop or retake without people"
+            })
+            critical_actions.append("Remove people from product shot")
+            distrust_factors.append("Unprofessional composition")
+            commercial_score = 3.0
         elif is_fashion:
-            recommendation = "Excellent fashion/model photography!"
-        else:
-            recommendation = "Great image quality!"
+            bonuses.append("👗 Professional model photography - people appropriate")
+            trust_factors.append("Fashion/model context correctly identified")
+            commercial_score = 8.5
         
+        # Background assessment
+        bg_complexity = features.get('background_complexity', 'simple')
+        if image_type == "studio_product_shot":
+            if bg_complexity == 'minimal':
+                bonuses.append("Clean, professional background")
+                trust_factors.append("Distraction-free background")
+                composition_score = 9.0
+            elif bg_complexity == 'complex':
+                quality_issues.append({
+                    "issue": "Cluttered background for product shot",
+                    "severity": "major",
+                    "impact": "Distracts from product",
+                    "fixable": True,
+                    "fix_method": "Remove background or reshoot"
+                })
+                distrust_factors.append("Unprofessional background")
+                composition_score = 4.0
+        
+        # Subject size
+        subject_area = features.get('primary_object_area_percent', 30)
+        if subject_area < 10:
+            quality_issues.append({
+                "issue": "Product too small in frame",
+                "severity": "critical",
+                "impact": "Product not visible enough",
+                "fixable": True,
+                "fix_method": "Crop tighter or retake closer"
+            })
+            critical_actions.append("Increase product prominence in frame")
+            composition_score = 3.0
+        elif subject_area > 70 and image_type == "studio_product_shot":
+            bonuses.append("Product prominently featured")
+        
+        # Text/watermark
+        if features.get('text_detected') and not features.get('is_product_text'):
+            risks.append({
+                "risk": "Possible watermark or overlay text",
+                "severity": "medium",
+                "mitigation": "Verify text is intentional branding"
+            })
+            distrust_factors.append("Unexplained text overlay")
+        elif features.get('is_product_text'):
+            bonuses.append("Product branding detected (appropriate)")
+        
+        # Calculate overall score
+        overall_score = (technical_score * 0.35 + composition_score * 0.30 + commercial_score * 0.35)
+        
+        # ===== STEP 3: DETERMINE VERDICT =====
+        if any(qi.get('severity') == 'critical' for qi in quality_issues):
+            verdict = "requires_recapture" if sharpness_cat == 'Blurry' else "suitable_after_fixes"
+            final_verdict = "REJECTED" if verdict == "requires_recapture" else "APPROVED"
+        elif critical_actions:
+            verdict = "suitable_after_fixes"
+            final_verdict = "APPROVED"
+        elif warnings or quality_issues:
+            verdict = "suitable_after_fixes"
+            final_verdict = "APPROVED"
+        else:
+            verdict = "ready_to_use"
+            final_verdict = "APPROVED"
+        
+        # Suitability
+        ecom_suitable = overall_score >= 6.0 and not any(qi.get('severity') == 'critical' for qi in quality_issues)
+        social_suitable = overall_score >= 5.0
+        prof_suitable = overall_score >= 7.0 and quality_tier in ['professional', 'semi_professional']
+        
+        # Trust score
+        trust_score = min(1.0, max(0.0, (len(trust_factors) - len(distrust_factors) * 0.5 + 5) / 10))
+        
+        # Build comprehensive response
         response = {
-            "verdict": verdict,
-            "confidence": 0.85 if verdict == "APPROVED" else 0.92,
-            "primary_reason": primary_reason,
-            "context_detected": context_detected,
-            "warnings": warnings,
-            "bonuses": bonuses,
-            "quality_score": quality_score,
-            "recommendation": recommendation
+            "classification": {
+                "image_type": image_type,
+                "quality_tier": quality_tier,
+                "intended_use": "e-commerce" if image_type == "studio_product_shot" else "marketing",
+                "confidence": 0.85,
+                "reasoning": f"Classified as {image_type} based on scene type ({clip_scene}), style ({clip_style}), and composition"
+            },
+            "type_specific_evaluation": {
+                "criteria_applied": f"Evaluated using {image_type} criteria",
+                "passes_type_criteria": overall_score >= 6.0,
+                "details": f"Applied type-specific standards for {image_type}"
+            },
+            "suitability_assessment": {
+                "ecommerce_product_page": {
+                    "suitable": ecom_suitable,
+                    "score": min(1.0, overall_score / 10),
+                    "reasoning": "Suitable for product listings" if ecom_suitable else "Quality issues prevent e-commerce use"
+                },
+                "social_media_marketing": {
+                    "suitable": social_suitable,
+                    "score": min(1.0, (overall_score + 1) / 10),
+                    "reasoning": "Acceptable for social content" if social_suitable else "Below social media standards"
+                },
+                "professional_website": {
+                    "suitable": prof_suitable,
+                    "score": min(1.0, overall_score / 10),
+                    "reasoning": "Professional quality" if prof_suitable else "Not professional enough"
+                }
+            },
+            "trust_evaluation": {
+                "trust_score": trust_score,
+                "trustworthiness": "high" if trust_score > 0.7 else ("medium" if trust_score > 0.4 else "low"),
+                "trust_factors": trust_factors,
+                "distrust_factors": distrust_factors,
+                "reasoning": f"Trust score {trust_score:.2f} based on {len(trust_factors)} positive and {len(distrust_factors)} negative factors"
+            },
+            "risks_detected": risks,
+            "quality_issues": quality_issues,
+            "recommendations": {
+                "critical_actions": critical_actions,
+                "improvements": improvements,
+                "verdict": verdict,
+                "verdict_reasoning": f"Overall score {overall_score:.1f}/10 - {verdict.replace('_', ' ')}"
+            },
+            "scores": {
+                "overall_quality": round(overall_score, 1),
+                "technical_quality": round(technical_score, 1),
+                "composition": round(composition_score, 1),
+                "commercial_viability": round(commercial_score, 1)
+            },
+            "confidence": 0.88
         }
         
-        return json.dumps(response)
+        return json.dumps(response, indent=2)
     
     def _openai_call(self, system_prompt: str, user_prompt: str) -> str:
         """Make actual OpenAI API call."""
@@ -285,7 +545,7 @@ class JSONParseError(Exception):
     pass
 
 
-def parse_verdict_response(response: str) -> VerdictSchema:
+def parse_verdict_response(response: str) -> ComprehensiveVerdictSchema:
     """
     Parse and validate LLM response.
     
@@ -293,7 +553,7 @@ def parse_verdict_response(response: str) -> VerdictSchema:
         response: Raw LLM response string
         
     Returns:
-        Validated VerdictSchema
+        Validated ComprehensiveVerdictSchema
         
     Raises:
         JSONParseError: If response is not valid JSON or doesn't match schema
@@ -314,9 +574,103 @@ def parse_verdict_response(response: str) -> VerdictSchema:
         raise JSONParseError(f"Invalid JSON: {str(e)}")
     
     try:
-        return VerdictSchema(**data)
+        return ComprehensiveVerdictSchema(**data)
     except Exception as e:
         raise JSONParseError(f"Schema validation failed: {str(e)}")
+
+
+def create_verdict_from_comprehensive(data: dict, raw_response: str, retry_count: int = 0) -> VerdictResult:
+    """Convert comprehensive LLM response to VerdictResult."""
+    
+    # Extract classification
+    classification = data.get('classification', {})
+    image_type = classification.get('image_type', 'unknown')
+    quality_tier = classification.get('quality_tier', 'unknown')
+    
+    # Extract suitability
+    suitability = data.get('suitability_assessment', {})
+    ecom = suitability.get('ecommerce_product_page', {})
+    social = suitability.get('social_media_marketing', {})
+    prof = suitability.get('professional_website', {})
+    
+    # Extract trust
+    trust = data.get('trust_evaluation', {})
+    
+    # Extract scores
+    scores = data.get('scores', {})
+    overall_quality = scores.get('overall_quality', 5.0)
+    
+    # Extract recommendations
+    recommendations = data.get('recommendations', {})
+    verdict_str = recommendations.get('verdict', 'ready_to_use')
+    
+    # Map verdict to APPROVED/REJECTED
+    if verdict_str in ['ready_to_use', 'suitable_after_fixes']:
+        final_verdict = "APPROVED"
+    else:
+        final_verdict = "REJECTED"
+    
+    # Build primary reason
+    primary_reason = recommendations.get('verdict_reasoning', classification.get('reasoning', 'Quality assessment complete'))
+    
+    # Extract warnings (from quality issues)
+    warnings = [qi.get('issue', '') for qi in data.get('quality_issues', []) if qi.get('severity') != 'critical']
+    
+    # Extract bonuses (from trust factors)
+    bonuses = trust.get('trust_factors', [])
+    
+    # Extract risks and quality issues
+    risks = data.get('risks_detected', [])
+    quality_issues = data.get('quality_issues', [])
+    
+    # Build recommendation text
+    critical = recommendations.get('critical_actions', [])
+    improvements = recommendations.get('improvements', [])
+    if critical:
+        recommendation = f"Critical: {critical[0]}"
+    elif improvements:
+        recommendation = f"Suggestion: {improvements[0]}"
+    else:
+        recommendation = "Image meets quality standards"
+    
+    return VerdictResult(
+        verdict=final_verdict,
+        confidence=data.get('confidence', 0.8),
+        primary_reason=primary_reason,
+        quality_score=int(overall_quality * 10),  # Convert 0-10 to 0-100
+        
+        # Classification
+        image_type=image_type,
+        quality_tier=quality_tier,
+        
+        # Suitability
+        ecommerce_suitable=ecom.get('suitable', False),
+        social_media_suitable=social.get('suitable', False),
+        professional_suitable=prof.get('suitable', False),
+        
+        # Trust
+        trust_score=trust.get('trust_score', 0.5),
+        trust_factors=trust.get('trust_factors', []),
+        distrust_factors=trust.get('distrust_factors', []),
+        
+        # Issues and recommendations
+        warnings=warnings,
+        bonuses=bonuses,
+        risks=risks,
+        quality_issues=quality_issues,
+        critical_actions=critical,
+        improvements=improvements,
+        recommendation=recommendation,
+        
+        # Scores
+        technical_score=scores.get('technical_quality', 5.0),
+        composition_score=scores.get('composition', 5.0),
+        commercial_score=scores.get('commercial_viability', 5.0),
+        
+        # Metadata
+        retry_count=retry_count,
+        raw_response=raw_response
+    )
 
 
 # =============================================================================
@@ -399,19 +753,18 @@ def get_verdict(
             )
             
             # Parse successful response
-            verdict_schema = parse_verdict_response(response)
+            parse_verdict_response(response)  # Validate schema
             
-            return VerdictResult(
-                verdict=verdict_schema.verdict,
-                confidence=verdict_schema.confidence,
-                primary_reason=verdict_schema.primary_reason,
-                warnings=verdict_schema.warnings,
-                bonuses=verdict_schema.bonuses,
-                quality_score=verdict_schema.quality_score,
-                recommendation=verdict_schema.recommendation,
-                retry_count=retry_count,
-                raw_response=response
-            )
+            # Extract JSON data and create comprehensive VerdictResult
+            import re
+            json_match = re.search(r'```(?:json)?\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = response.strip()
+            
+            data = json.loads(json_str)
+            return create_verdict_from_comprehensive(data, response, retry_count)
             
         except JSONParseError as e:
             retry_count += 1

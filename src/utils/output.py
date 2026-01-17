@@ -59,14 +59,22 @@ def save_analysis_result(
         image_name = Path(image_path).stem if image_path else "analysis"
         filename = f"{image_name}_{timestamp}.json"
     
-    # Build the complete output structure
+    # Build the comprehensive output structure
     output_data = {
         "metadata": {
             "timestamp": datetime.now().isoformat(),
             "image_path": str(image_path) if image_path else None,
             "image_filename": Path(image_path).name if image_path else None,
-            "version": "1.0"
+            "version": "2.0",
+            "llm_retries": verdict_result.retry_count
         },
+        
+        "classification": {
+            "image_type": verdict_result.image_type,
+            "quality_tier": verdict_result.quality_tier,
+            "confidence": verdict_result.confidence
+        },
+        
         "features": {
             "tier1_objects": {
                 "detected_classes": extraction_result.objects_detected or [],
@@ -90,16 +98,43 @@ def save_analysis_result(
                 "is_product_text": extraction_result.is_product_text or False
             }
         },
+        
+        "suitability_assessment": {
+            "ecommerce_product_page": verdict_result.ecommerce_suitable,
+            "social_media_marketing": verdict_result.social_media_suitable,
+            "professional_website": verdict_result.professional_suitable
+        },
+        
+        "trust_evaluation": {
+            "trust_score": verdict_result.trust_score,
+            "trust_factors": verdict_result.trust_factors,
+            "distrust_factors": verdict_result.distrust_factors
+        },
+        
+        "quality_scores": {
+            "overall": verdict_result.quality_score,
+            "technical": verdict_result.technical_score,
+            "composition": verdict_result.composition_score,
+            "commercial_viability": verdict_result.commercial_score
+        },
+        
+        "risks_detected": verdict_result.risks,
+        "quality_issues": verdict_result.quality_issues,
+        
+        "recommendations": {
+            "critical_actions": verdict_result.critical_actions,
+            "improvements": verdict_result.improvements,
+            "recommendation_summary": verdict_result.recommendation
+        },
+        
         "verdict": {
             "decision": verdict_result.verdict,
             "confidence": verdict_result.confidence,
-            "quality_score": verdict_result.quality_score,
             "primary_reason": verdict_result.primary_reason,
             "warnings": verdict_result.warnings,
-            "bonuses": verdict_result.bonuses,
-            "recommendation": verdict_result.recommendation,
-            "retry_count": verdict_result.retry_count
+            "bonuses": verdict_result.bonuses
         },
+        
         "status": extraction_result.status,
         "rejection_reason": extraction_result.rejection_reason
     }
