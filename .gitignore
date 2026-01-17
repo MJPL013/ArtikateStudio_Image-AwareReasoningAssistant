@@ -1,0 +1,45 @@
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Environment variables (API keys)
+.env
+.env.local
+.env.*.local
+
+# Output files
+outputs/
+*.json
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model cache (YOLO downloads)
+*.pt
+runs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

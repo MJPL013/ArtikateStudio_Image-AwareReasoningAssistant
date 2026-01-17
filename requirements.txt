@@ -1,0 +1,30 @@
+# Blind Image Reasoning System - Python Dependencies
+# Python 3.10+ required
+
+# Web Framework
+streamlit>=1.28.0
+
+# Computer Vision
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+
+# ML Models
+ultralytics>=8.0.0  # YOLOv8
+transformers>=4.35.0  # CLIP
+torch>=2.0.0
+torchvision>=0.15.0
+
+# LLM Interface & Validation
+pydantic>=2.0.0
+tenacity>=8.2.0
+
+# Utilities
+numpy>=1.24.0
+tqdm>=4.65.0
+
+# Optional: For actual LLM API calls (uncomment as needed)
+# openai>=1.0.0
+google-generativeai>=0.3.0
+
+
+python-dotenv
